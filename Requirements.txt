@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+requests
+beautifulsoup4
+feedparser
+ccxt
+youtube_transcript_api
+jinja2
+psutil
+textblob
