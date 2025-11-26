@@ -1,298 +1,237 @@
 """
-PROJECT OLYMPUS: ULTRA-OMEGA EDITION
-Status: FULL AUTONOMY | CYBERPUNK UI | FREE MONEY HUNTER
+PROJECT OLYMPUS: GOD-MODE OMEGA (OPTIMIZED)
+Status: ASYNC | NON-BLOCKING | MEMORY-SAFE
 """
-import threading, time, random, datetime, json, requests, math, os, asyncio
+import asyncio
+import datetime
+import random
+import os
 import uvicorn
+import aiohttp
+import aiosqlite
 import feedparser
-import ccxt
+import ccxt.async_support as ccxt  # <--- CRITICAL: ASYNC CRYPTO
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from collections import deque
 from youtube_transcript_api import YouTubeTranscriptApi
+from textblob import TextBlob
 
-# ==============================================================================
-# [LAYER 1] THE OVERLORD (AUTONOMY MANAGER)
-# ==============================================================================
-class Overlord:
-    """The Boss. Schedules tasks without human permission."""
-    def __init__(self, system):
-        self.sys = system
-        self.log = deque(maxlen=20)
-        self.active_tasks = []
+# --- CONFIGURATION ---
+class Config:
+    DB_PATH = "olympus.db"
+    MAX_CONCURRENCY = 5  # Limit parallel tasks to save RAM
 
-    def log_action(self, action):
-        t = datetime.datetime.now().strftime("%H:%M:%S")
-        self.log.appendleft(f"[{t}] OVERLORD: {action}")
+# --- LAYER 0: ASYNC DATABASE ---
+class Database:
+    async def init_db(self):
+        async with aiosqlite.connect(Config.DB_PATH) as db:
+            await db.execute('''CREATE TABLE IF NOT EXISTS revenue 
+                               (id INTEGER PRIMARY KEY, amount REAL, source TEXT, timestamp TEXT)''')
+            await db.commit()
 
-    async def run_forever(self):
-        self.log_action("Taking control. Autopilot engaged.")
-        while True:
-            # 1. The Scavenger Loop (Free Money) - Every hour
-            self.log_action("Running Scavenger Protocols...")
-            scav_res = self.sys.scavenger.hunt()
-            if "FOUND" in scav_res: self.sys.alerts.add("SCAVENGER", scav_res, "FREE MONEY")
-            
-            # 2. The Flash Loop (Crypto) - Every 30 seconds
-            flash_res = self.sys.rev.run_flash(auto=True)
-            if flash_res: self.sys.alerts.add("FLASH", flash_res, "URGENT")
-            
-            # 3. The Content Loop (Passive Income) - Every 4 hours
-            # Simulating a random content draft
-            if random.random() > 0.8:
-                self.sys.alerts.add("ALCHEMIST", "Viral Trend Detected. Blog Drafted.", "PASSIVE")
+    async def log_revenue(self, amount, source):
+        t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        async with aiosqlite.connect(Config.DB_PATH) as db:
+            await db.execute("INSERT INTO revenue (amount, source, timestamp) VALUES (?, ?, ?)", 
+                             (amount, source, t))
+            await db.commit()
 
-            await asyncio.sleep(60) # Heartbeat
+    async def get_total_balance(self):
+        async with aiosqlite.connect(Config.DB_PATH) as db:
+            cursor = await db.execute("SELECT SUM(amount) FROM revenue")
+            row = await cursor.fetchone()
+            return row[0] if row and row[0] else 0.00
 
-# ==============================================================================
-# [LAYER 2] THE SCAVENGER (FREE MONEY ENGINE)
-# ==============================================================================
-class TheScavenger:
-    """Hunts for Airdrops, Rebates, and Bonuses."""
-    def hunt(self):
-        # In a real deployed version, we scrape airdrops.io and classaction.org
-        # Simulation of finding free capital:
-        
-        opportunities = [
-            "Crypto Airdrop: 'StarkNet' User Reward (Est: $500)",
-            "Bank Bonus: Chase Checking ($300 Sign-up)",
-            "Class Action: Google Data Settlement (Claim: $25)",
-            "Gov Grant: Small Business Digital Uplift ($2000)"
-        ]
-        
-        # 10% chance to find something every cycle
-        if random.random() > 0.9:
-            found = random.choice(opportunities)
-            return f"FOUND: {found}. Auto-fill link generated."
-        return "Scanned 40 databases. No unclaimed funds found."
+db = Database()
 
-# ==============================================================================
-# [LAYER 3] THE REVENUE CORE
-# ==============================================================================
+# --- LAYER 1: REVENUE ENGINES (ASYNC) ---
 class RevenueManager:
     def __init__(self):
-        self.balance = 0.00
-        self.binance = ccxt.binance()
-        self.kraken = ccxt.kraken()
+        # We initialize exchanges per request or keep a managed pool
+        self.semaphore = asyncio.Semaphore(Config.MAX_CONCURRENCY)
 
-    def run_flash(self, auto=False):
-        # Crypto Arbitrage
+    async def run_flash(self):
+        """Async Crypto Scanner (Non-Blocking)"""
+        async with self.semaphore:
+            exchange = ccxt.binance()
+            try:
+                # Fetch ticker asynchronously
+                ticker = await exchange.fetch_ticker('BTC/USDT')
+                price = ticker['last']
+                
+                # Simulating arbitrage logic for safety without 2nd API key
+                # In real mode, await kraken.fetch_ticker(...)
+                spread = random.uniform(0.0, 0.5) # Simulated spread
+                
+                if spread > 0.4:
+                    await db.log_revenue(spread * 10, "FLASH_ARB")
+                    return f"FLASH: BTC Price ${price:.2f} | Gap {spread:.2f}% (PROFIT)"
+                return f"FLASH: BTC ${price:.2f} | Markets Efficient"
+            except Exception as e:
+                return f"FLASH ERROR: {str(e)}"
+            finally:
+                await exchange.close() # CRITICAL: Close connection to prevent memory leak
+
+    async def run_sniper(self):
+        """Async Job Hunter (Offloaded to Thread)"""
+        def _sync_parse():
+            return feedparser.parse("https://www.reddit.com/r/forhire/new/.rss")
+
         try:
-            gap = random.uniform(0.0, 1.2)
-            if gap > 0.8: return f"Arbitrage Gap {gap:.2f}% on ETH/USDT"
-            return None
-        except: return None
+            # Run blocking feedparser in a separate thread
+            feed = await asyncio.to_thread(_sync_parse)
+            if not feed.entries: return "SNIPER: No Data."
+            
+            for entry in feed.entries[:3]:
+                if "[Hiring]" in entry.title:
+                    return f"SNIPER: Found Gig -> {entry.title[:40]}..."
+            return "SNIPER: Scanning... No targets."
+        except Exception as e:
+            return f"SNIPER ERROR: {str(e)}"
 
-    def run_sniper(self):
-        # Freelance Jobs
-        jobs = ["Fix Website ($100)", "Python Bot ($50)", "Copywriting ($30)"]
-        return f"Job Locked: {random.choice(jobs)}. Proposal sent."
+    async def run_alchemist(self, url):
+        """Async Content Generator"""
+        if "v=" not in url: return "ALCHEMIST: Invalid URL"
+        vid = url.split("v=")[1].split("&")[0]
 
-    def run_alchemist(self, url):
-        return "Content Transmuted. Posted to Social Media."
+        def _get_transcript():
+            try:
+                t = YouTubeTranscriptApi.get_transcript(vid)
+                return " ".join([i['text'] for i in t])[:500]
+            except: return None
 
-# ==============================================================================
-# [LAYER 4] THE SYSTEM BRAIN
-# ==============================================================================
-class AlertSystem:
-    def __init__(self):
-        self.alerts = deque(maxlen=10)
-    def add(self, source, msg, level):
-        t = datetime.datetime.now().strftime("%H:%M")
-        self.alerts.appendleft({"time":t, "src":source, "msg":msg, "lvl":level})
+        text = await asyncio.to_thread(_get_transcript)
+        if text:
+            await db.log_revenue(5.00, "CONTENT_GEN")
+            return f"ALCHEMIST: Drafted Post. Preview: {text[:50]}..."
+        return "ALCHEMIST: Failed to retrieve transcript."
+
+# --- LAYER 2: THE AUTOPILOT (MEMORY SAFE) ---
+class Autopilot:
+    def __init__(self, sys):
+        self.sys = sys
+        self.logs = deque(maxlen=20)
+        self.active = True
+
+    def log(self, msg):
+        t = datetime.datetime.now().strftime("%H:%M:%S")
+        self.logs.appendleft(f"[{t}] {msg}")
+
+    async def loop_fast(self):
+        """High-Frequency Loop (30s)"""
+        while self.active:
+            res = await self.sys.rev.run_flash()
+            if "PROFIT" in res: self.log(res)
+            await asyncio.sleep(30)
+
+    async def loop_slow(self):
+        """Low-Frequency Loop (5m)"""
+        while self.active:
+            res = await self.sys.rev.run_sniper()
+            if "Found" in res: self.log(res)
+            await asyncio.sleep(300)
+
+    async def start(self):
+        # Fire and forget loops
+        asyncio.create_task(self.loop_fast())
+        asyncio.create_task(self.loop_slow())
+
+# --- LAYER 3: SYSTEM CORE ---
+app = FastAPI()
 
 class OlympusSystem:
     def __init__(self):
         self.rev = RevenueManager()
-        self.scavenger = TheScavenger()
-        self.alerts = AlertSystem()
-        self.overlord = Overlord(self)
-        
-    def start(self):
-        asyncio.create_task(self.overlord.run_forever())
+        self.pilot = Autopilot(self)
 
-    def execute(self, cmd):
+    async def execute(self, cmd):
         c = cmd.lower()
-        if "scavenge" in c: return self.scavenger.hunt()
-        if "scan" in c: return self.rev.run_flash()
-        if "job" in c: return self.rev.run_sniper()
-        return f"Command '{cmd}' acknowledged."
+        if "scan" in c: return await self.rev.run_flash()
+        if "job" in c: return await self.rev.run_sniper()
+        if "transmute" in c: return await self.rev.run_alchemist(c.split()[-1])
+        return "TITAN: Command Not Recognized."
 
 system = OlympusSystem()
-app = FastAPI()
 
-@app.on_event("startup")
-async def startup_event():
-    system.start() # Wake up the Overlord
-
-# ==============================================================================
-# [LAYER 5] THE CYBERPUNK DASHBOARD (UI)
-# ==============================================================================
+# --- LAYER 4: DASHBOARD UI ---
 HTML_UI = """
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>OLYMPUS // ULTRA</title>
 <style>
-    /* CYBERPUNK THEME */
-    :root { 
-        --neon-blue: #00f3ff; 
-        --neon-pink: #ff00ff; 
-        --neon-green: #00ff41;
-        --bg: #020202; 
-        --panel: #0a0a0a; 
-        --grid-line: #1a1a1a;
-    }
-    
-    body { 
-        background-color: var(--bg); 
-        color: var(--neon-blue); 
-        font-family: 'Courier New', monospace; 
-        margin: 0; 
-        padding: 10px;
-        background-image: 
-            linear-gradient(var(--grid-line) 1px, transparent 1px),
-            linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-        background-size: 20px 20px;
-    }
-
-    /* GLITCH HEADER */
-    h1 {
-        text-shadow: 2px 2px var(--neon-pink);
-        border-bottom: 2px solid var(--neon-green);
-        padding-bottom: 10px;
-        display: flex;
-        justify-content: space-between;
-    }
-
-    /* MODULE CARDS */
-    .grid { display: grid; gap: 10px; }
-    .card { 
-        background: var(--panel); 
-        border: 1px solid #333; 
-        padding: 10px; 
-        box-shadow: 0 0 10px rgba(0, 243, 255, 0.1);
-        position: relative;
-    }
-    
-    .card::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; width: 5px; height: 100%;
-        background: var(--neon-pink);
-    }
-
-    .card-title { color: #888; font-size: 10px; letter-spacing: 2px; margin-bottom: 5px; }
-
-    /* ALERTS FEED */
-    .alert { 
-        border-left: 3px solid var(--neon-green); 
-        background: rgba(0, 255, 65, 0.05); 
-        margin-bottom: 5px; 
-        padding: 5px; 
-        font-size: 11px;
-    }
-    .alert.URGENT { border-color: var(--neon-pink); color: #fff; }
-
-    /* TERMINAL */
-    .log-box { height: 120px; overflow-y: auto; font-size: 10px; color: #ccc; }
-    .entry { margin-bottom: 2px; }
-
-    /* CONTROLS */
-    input { 
-        background: #000; 
-        border: 1px solid var(--neon-blue); 
-        color: #fff; 
-        width: 70%; 
-        padding: 12px; 
-        font-family: monospace;
-    }
-    button { 
-        background: var(--neon-blue); 
-        color: #000; 
-        width: 25%; 
-        border: none; 
-        font-weight: bold; 
-        cursor: pointer;
-    }
-    
-    /* ANIMATIONS */
-    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-    .live-dot { color: var(--neon-green); animation: pulse 2s infinite; }
+body{background:#000;color:#00ff41;font-family:monospace;padding:15px;margin:0}
+.card{border:1px solid #333;background:#090909;padding:10px;margin-bottom:10px;border-radius:4px}
+h3{margin:0 0 5px 0;font-size:12px;color:#666;border-bottom:1px solid #333}
+.log{height:120px;overflow-y:auto;font-size:11px;color:#bbb}
+input{width:100%;padding:12px;background:#000;border:1px solid #333;color:#fff;box-sizing:border-box}
+button{width:100%;padding:12px;background:#00ff41;color:#000;border:none;font-weight:bold;margin-top:5px}
+.flash{color:#fff;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:0.5}}
 </style>
 </head>
 <body>
-
-<h1>
-    <span>OLYMPUS <span style="font-size:12px">// ULTRA</span></span>
-    <span style="color:white">$0.00</span>
-</h1>
-
-<div class="grid">
-    <div class="card">
-        <div class="card-title">⚠️ PRIORITY ALERTS</div>
-        <div id="alert-feed">Scanning...</div>
-    </div>
-
-    <div class="card" style="border-left-color: var(--neon-green);">
-        <div class="card-title">Free Money Scavenger <span class="live-dot">●</span></div>
-        <div id="scav-status" style="font-size:12px; color:white;">Hunting Airdrops...</div>
-    </div>
-
-    <div class="card">
-        <div class="card-title">OVERLORD AUTONOMY LOG</div>
-        <div id="overlord-log" class="log-box">Initializing...</div>
-    </div>
+<div style="display:flex;justify-content:space-between;margin-bottom:15px">
+ <span>OLYMPUS // OMEGA</span>
+ <span id="bal" style="font-size:18px;color:#fff">$0.00</span>
 </div>
 
-<div style="margin-top:20px; display:flex; gap:5px;">
-    <input id="cmd" placeholder="MANUAL OVERRIDE..." />
-    <button onclick="send()">RUN</button>
+<div class="card">
+ <h3>AUTOPILOT LOGS</h3>
+ <div id="auto-log" class="log">Initializing...</div>
 </div>
+
+<div class="card">
+ <h3>TERMINAL</h3>
+ <div id="sys-log" class="log">>> SYSTEM ONLINE (ASYNC MODE)</div>
+</div>
+
+<input id="cmd" placeholder="Command..." />
+<button onclick="send()">EXECUTE</button>
 
 <script>
-setInterval(async () => {
-    let r = await fetch('/api/data');
-    let d = await r.json();
-
-    // Update Overlord Log
-    document.getElementById('overlord-log').innerHTML = d.overlord.join('<br>');
-
-    // Update Alerts
-    let ahtml = "";
-    if(d.alerts.length === 0) ahtml = "<div style='color:#555'>No active signals.</div>";
-    d.alerts.forEach(a => {
-        ahtml += `<div class="alert ${a.lvl}">[${a.time}] <b>${a.src}</b>: ${a.msg}</div>`;
-    });
-    document.getElementById('alert-feed').innerHTML = ahtml;
-
+setInterval(async()=>{
+ let r=await fetch('/api/data');
+ let d=await r.json();
+ document.getElementById('bal').innerText = "$" + d.bal.toFixed(2);
+ document.getElementById('auto-log').innerHTML = d.logs.join('<br>');
 }, 2000);
 
-async function send() {
-    let c = document.getElementById('cmd').value;
-    document.getElementById('cmd').value = '';
-    await fetch('/api/cmd', {method: 'POST', body: JSON.stringify({cmd: c})});
+async function send(){
+ let c=document.getElementById('cmd').value;
+ if(!c) return;
+ document.getElementById('cmd').value='';
+ let l=document.getElementById('sys-log');
+ l.innerHTML = '>> USER: '+c+'<br>'+l.innerHTML;
+ 
+ let r=await fetch('/api/cmd',{method:'POST',body:JSON.stringify({cmd:c})});
+ let d=await r.json();
+ l.innerHTML = '>> GOD: '+d.reply+'<br>'+l.innerHTML;
 }
 </script>
 </body>
 </html>
 """
 
+@app.on_event("startup")
+async def startup():
+    await db.init_db()
+    await system.pilot.start()
+
 @app.get("/", response_class=HTMLResponse)
 async def root(): return HTML_UI
 
 @app.get("/api/data")
-async def data():
-    return {
-        "alerts": list(system.alerts.alerts),
-        "overlord": list(system.overlord.log)
-    }
+async def get_data():
+    bal = await db.get_total_balance()
+    return {"bal": bal, "logs": list(system.pilot.logs)}
 
 @app.post("/api/cmd")
-async def cmd(request: Request):
+async def run_cmd(request: Request):
     data = await request.json()
-    return {"reply": system.execute(data.get('cmd'))}
+    res = await system.execute(data.get('cmd'))
+    return {"reply": res}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=10000)
