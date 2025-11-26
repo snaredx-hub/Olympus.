@@ -1,6 +1,7 @@
 fastapi
 uvicorn
-requests
+aiohttp
+aiosqlite
 beautifulsoup4
 feedparser
 ccxt
@@ -8,4 +9,3 @@ youtube_transcript_api
 jinja2
 psutil
 textblob
-asyncio
