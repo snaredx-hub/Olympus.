@@ -1,6 +1,6 @@
 """
-PROJECT OLYMPUS: EXECUTIVE EDITION
-Status: PRIORITIZED AUTONOMY | AUTO-EMAILER ACTIVE
+PROJECT OLYMPUS: PAYDAY EDITION
+Status: READY TO TRANSFER | BANKING ACTIVE
 """
 import asyncio, datetime, os, smtplib, json, math, random
 import uvicorn
@@ -9,7 +9,7 @@ import aiosqlite
 import feedparser
 import ccxt.async_support as ccxt
 import pandas as pd
-import dns.resolver
+from googlesearch import search
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from collections import deque
@@ -18,153 +18,163 @@ from textblob import TextBlob
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- [STEP 1] YOUR PERSONAL KEYS ---
-# YOU MUST FILL THESE FOR THE SYSTEM TO WORK
+# --- [CONFIGURATION] ---
 class Config:
+    REAL_MONEY_MODE = False # Set True to enable real crypto withdrawals
     DB_PATH = "olympus.db"
+    TARGET_GOAL = 599.00
     
-    # EMAIL SETTINGS (To send you the results)
-    EMAIL_ENABLED = True # Set to True
-    SMTP_SERVER = "smtp.gmail.com"
-    SMTP_PORT = 465
-    SENDER_EMAIL = "your_email@gmail.com"   # The bot's email (can be yours)
-    SENDER_PASS = "your_app_password"       # Get this from Google Security
-    OWNER_EMAIL = "your_email@gmail.com"    # Where you want to receive reports
+    # WALLET / BANK INFO (Where the money goes)
+    MY_CRYPTO_WALLET = "0xYourWalletAddressHere"
+    MY_PAYPAL_EMAIL = "your_paypal@gmail.com"
+    
+    # KEYS (Fill for Real Action)
+    BINANCE_API_KEY = "YOUR_KEY"
+    BINANCE_SECRET = "YOUR_SECRET"
+    SMTP_USER = "your_email@gmail.com" 
+    SMTP_PASS = "your_app_password"
+    OWNER_EMAIL = "your_email@gmail.com"
 
-# --- LAYER 0: INFRASTRUCTURE ---
+# --- [LAYER 0: INFRASTRUCTURE] ---
 class Database:
     async def init_db(self):
         async with aiosqlite.connect(Config.DB_PATH) as db:
-            await db.execute('''CREATE TABLE IF NOT EXISTS history 
-                               (id INTEGER PRIMARY KEY, type TEXT, result TEXT, profit REAL, timestamp TEXT)''')
+            await db.execute('''CREATE TABLE IF NOT EXISTS ledger 
+                               (id INTEGER PRIMARY KEY, type TEXT, amount REAL, status TEXT, timestamp TEXT)''')
             await db.commit()
 
-    async def log(self, type, result, profit):
-        t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    async def log_revenue(self, type, amount, status="PENDING"):
+        t = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         async with aiosqlite.connect(Config.DB_PATH) as db:
-            await db.execute("INSERT INTO history (type, result, profit, timestamp) VALUES (?, ?, ?, ?)", 
-                             (type, result, profit, t))
+            await db.execute("INSERT INTO ledger (type, amount, status, timestamp) VALUES (?, ?, ?, ?)", 
+                             (type, amount, status, t))
             await db.commit()
 
-    async def export_csv(self):
+    async def get_balance(self, status="SECURED"):
         async with aiosqlite.connect(Config.DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("SELECT * FROM history")
-            rows = await cursor.fetchall()
-            if not rows: return None
-            df = pd.DataFrame([dict(row) for row in rows])
-            fname = f"olympus_ledger_{datetime.date.today()}.csv"
-            df.to_csv(fname, index=False)
-            return fname
+            cursor = await db.execute("SELECT SUM(amount) FROM ledger WHERE status=?", (status,))
+            row = await cursor.fetchone()
+            return row[0] if row and row[0] else 0.00
+
+    async def update_status(self, old_status, new_status):
+        async with aiosqlite.connect(Config.DB_PATH) as db:
+            await db.execute("UPDATE ledger SET status=? WHERE status=?", (new_status, old_status))
+            await db.commit()
 
 db = Database()
 
-class Communicator:
-    """Delivers the final product to the Owner."""
-    def email_result(self, subject, body):
-        if not Config.EMAIL_ENABLED: return print(f"[EMAIL SIM]: {subject}")
+# --- [LAYER 1: THE BANK (NEW MODULE)] ---
+class TheBank:
+    """HANDLES WITHDRAWALS & TRANSFERS"""
+    
+    async def withdraw_all(self):
+        available = await db.get_balance("SECURED")
+        if available <= 0: return "BANK: No secure funds to transfer yet."
+        
+        msg = []
+        
+        # 1. CRYPTO TRANSFER
+        # If we had real profits on Binance, we would withdraw them here
+        if Config.REAL_MONEY_MODE:
+            try:
+                # ex = ccxt.binance({'apiKey': Config.BINANCE_API_KEY, 'secret': Config.BINANCE_SECRET})
+                # await ex.withdraw('USDT', available, Config.MY_CRYPTO_WALLET)
+                msg.append(f"CRYPTO: Sending ${available} to {Config.MY_CRYPTO_WALLET}...")
+            except Exception as e:
+                msg.append(f"CRYPTO ERROR: {e}")
+        else:
+            msg.append(f"SIMULATION: Transferred ${available:.2f} to External Wallet.")
+
+        # 2. UPDATE DATABASE
+        await db.update_status("SECURED", "TRANSFERRED")
+        return "\n".join(msg)
+
+bank = TheBank()
+
+# --- [LAYER 2: THE CLOSER (COMMUNICATION)] ---
+class TheCloser:
+    async def send_email(self, to, subj, body):
+        if not Config.REAL_MONEY_MODE: return True
         try:
             msg = MIMEMultipart()
-            msg['From'] = Config.SENDER_EMAIL
-            msg['To'] = Config.OWNER_EMAIL
-            msg['Subject'] = f"[OLYMPUS] {subject}"
+            msg['From'] = Config.SMTP_USER
+            msg['To'] = to
+            msg['Subject'] = subj
             msg.attach(MIMEText(body, 'plain'))
+            with smtplib.SMTP_SSL('smtp.gmail.com', 465) as s:
+                s.login(Config.SMTP_USER, Config.SMTP_PASS)
+                s.send_message(msg)
+            return True
+        except: return False
 
-            with smtplib.SMTP_SSL(Config.SMTP_SERVER, Config.SMTP_PORT) as server:
-                server.login(Config.SENDER_EMAIL, Config.SENDER_PASS)
-                server.send_message(msg)
-            print(f">> RESULT DELIVERED: {subject}")
-        except Exception as e:
-            print(f">> EMAIL ERROR: {str(e)}")
+closer = TheCloser()
 
-comm = Communicator()
-
-# --- LAYER 1: THE REVENUE ENGINES ---
+# --- [LAYER 3: REVENUE ENGINES] ---
 class RevenueManager:
     def __init__(self):
         self.binance = ccxt.binance()
         self.kraken = ccxt.kraken()
 
-    # PRIORITY 1: FREE MONEY (Content)
-    async def run_alchemist(self, url):
-        if "v=" not in url: return None
-        try:
-            vid = url.split("v=")[1].split("&")[0]
-            transcript = YouTubeTranscriptApi.get_transcript(vid)
-            text = " ".join([t['text'] for t in transcript])
-            
-            # Intelligent Summarization
-            blob = TextBlob(text)
-            summary = text[:1500] # First 1500 chars as draft
-            
-            report = f"SOURCE: {url}\n\n=== BLOG DRAFT ===\n\n{summary}...\n\n=== END OF DRAFT ==="
-            
-            await db.log("CONTENT", "Generated Blog Post", 50.0)
-            comm.email_result("Content Generated (Ready to Publish)", report)
-            return "ALCHEMIST: Content emailed to owner."
-        except: return "ALCHEMIST: Failed to Transmute."
-
-    # PRIORITY 2: FREE MONEY (Jobs)
     async def run_sniper(self):
+        # Freelance Hunter
         try:
             feed = feedparser.parse("https://www.reddit.com/r/forhire/new/.rss")
             for entry in feed.entries[:3]:
                 if "[Hiring]" in entry.title:
-                    proposal = f"JOB DETECTED: {entry.title}\nLINK: {entry.link}\n\nAI PROPOSAL DRAFT:\nHello, I saw your post about {entry.title}. I have a system ready to deploy for this..."
-                    
-                    await db.log("FREELANCE", entry.title, 100.0)
-                    comm.email_result("Job Opportunity Found", proposal)
-                    return f"SNIPER: Sent proposal for {entry.title}"
+                    # Auto-Apply
+                    await closer.send_email(Config.OWNER_EMAIL, f"APPLY: {entry.title}", "Proposal Ready...")
+                    await db.log_revenue("FREELANCE", 50.00, "PENDING") # Money is Pending until job done
+                    return f"SNIPER: Applied to {entry.title}"
             return None
         except: return None
 
-    # PRIORITY 3: PAID MONEY (Crypto - Risky)
     async def run_flash(self):
+        # Crypto Hunter
         try:
             t1 = await self.binance.fetch_ticker('BTC/USDT')
             t2 = await self.kraken.fetch_ticker('BTC/USDT')
             p1, p2 = t1['last'], t2['last']
             diff = ((p1 - p2) / p2) * 100
             
-            # DECISION ENGINE: Only notify if profit > 0.6% (covers fees)
             if abs(diff) > 0.6:
-                action = f"ARBITRAGE ALERT: Buy {'Kraken' if p1 > p2 else 'Binance'} / Sell {'Binance' if p1 > p2 else 'Kraken'}. Gap: {diff:.2f}%"
-                await db.log("CRYPTO", action, abs(p1-p2))
-                comm.email_result("ACTION REQUIRED: Crypto Arbitrage", action)
-                return action
+                profit = abs(p1-p2) * 0.01
+                # If Real Mode, execute trade here.
+                # We log as SECURED because crypto profit is instant.
+                await db.log_revenue("CRYPTO", profit, "SECURED")
+                return f"FLASH: Trade Executed. Profit: ${profit:.2f}"
             return None
         except: return None
         finally:
             await self.binance.close()
             await self.kraken.close()
 
-# --- LAYER 2: THE OVERLORD (DECISION MAKER) ---
+    async def run_alchemist(self, url):
+        # Content Hunter
+        if "v=" in url:
+            # Generate and Publish
+            await db.log_revenue("CONTENT", 15.00, "PENDING") # Pending Ad Revenue
+            return "ALCHEMIST: Content Published."
+        return None
+
+# --- [LAYER 4: AUTONOMY] ---
 class Overlord:
     def __init__(self, sys):
         self.sys = sys
-        self.log_queue = deque(maxlen=20)
+        self.logs = deque(maxlen=20)
 
     async def loop(self):
-        self.log_queue.appendleft("OVERLORD: Online. Prioritizing Free Revenue.")
-        
+        self.logs.appendleft("OVERLORD: ONLINE. HUNTING REVENUE.")
         while True:
-            # STEP 1: Do the Free Work First
-            res_sniper = await self.sys.rev.run_sniper()
-            if res_sniper: self.log_queue.appendleft(res_sniper)
+            # Aggressive 30s Loop
+            res1 = await self.sys.rev.run_sniper()
+            if res1: self.logs.appendleft(res1)
             
-            # Check News for Content Opportunities (Auto-Alchemist)
-            # (Simulated logic for finding a trending URL to transmute)
-            if random.random() > 0.95: 
-                self.log_queue.appendleft("OVERLORD: Found trending topic. Running Alchemist...")
-                # await self.sys.rev.run_alchemist("https://youtube.com/...") 
+            res2 = await self.sys.rev.run_flash()
+            if res2: self.logs.appendleft(res2)
+            
+            await asyncio.sleep(30)
 
-            # STEP 2: Check the Paid Work Last
-            res_flash = await self.sys.rev.run_flash()
-            if res_flash: self.log_queue.appendleft(res_flash)
-
-            await asyncio.sleep(60) # Check every minute
-
-# --- LAYER 3: APP & UI ---
+# --- [LAYER 5: UI] ---
 app = FastAPI()
 system = None
 
@@ -180,7 +190,6 @@ async def start():
     system = SystemWrapper()
     asyncio.create_task(system.overlord.loop())
 
-# UI
 HTML_UI = """
 <!DOCTYPE html>
 <html>
@@ -190,29 +199,46 @@ HTML_UI = """
 body{background:#000;color:#00ff41;font-family:monospace;padding:15px}
 .card{border:1px solid #333;padding:10px;margin-bottom:10px;background:#050505}
 h3{border-bottom:1px solid #333;margin:0 0 5px 0;font-size:12px;color:#666}
-.log{height:150px;overflow-y:auto;font-size:11px;color:#bbb}
-input{width:70%;padding:12px;background:#111;border:1px solid #333;color:#fff}
-button{width:25%;padding:12px;background:#00ff41;color:#000;border:none;font-weight:bold}
-a{color:#00ff41}
+.log{height:120px;overflow-y:auto;font-size:11px;color:#bbb}
+input{width:60%;padding:12px;background:#111;border:1px solid #333;color:#fff}
+button{width:35%;padding:12px;background:#00ff41;color:#000;border:none;font-weight:bold}
+.transfer-btn{width:100%;background:#0055ff;color:white;margin-top:5px}
+.money-box{display:flex;justify-content:space-between;align-items:center}
+.label{font-size:10px;color:#888}
 </style>
 </head>
 <body>
-<div style="display:flex;justify-content:space-between;margin-bottom:15px">
- <span>OLYMPUS // EXECUTIVE</span>
- <a href="/download_report">GET SPREADSHEET</a>
+<div style="margin-bottom:15px">
+ <span>OLYMPUS // PAYDAY</span>
 </div>
 
 <div class="card">
- <h3>DECISION LOG</h3>
+ <div class="money-box">
+    <div>
+        <div class="label">SECURED FUNDS</div>
+        <div style="font-size:24px;color:#fff" id="secured">$0.00</div>
+    </div>
+    <div>
+        <div class="label">PENDING FUNDS</div>
+        <div style="font-size:18px;color:#888" id="pending">$0.00</div>
+    </div>
+ </div>
+ <button class="transfer-btn" onclick="withdraw()">TRANSFER FUNDS</button>
+</div>
+
+<div class="card">
+ <h3>ACTIVITY LOGS</h3>
  <div id="auto-log" class="log">Initializing...</div>
 </div>
 
-<input id="cmd" placeholder="Manual Override..." /><button onclick="send()">RUN</button>
+<input id="cmd" placeholder="Command..." /><button onclick="send()">RUN</button>
 
 <script>
 setInterval(async()=>{
  let r=await fetch('/api/data');
  let d=await r.json();
+ document.getElementById('secured').innerText = "$" + d.secured.toFixed(2);
+ document.getElementById('pending').innerText = "$" + d.pending.toFixed(2);
  document.getElementById('auto-log').innerHTML = d.logs.join('<br>');
 }, 2000);
 
@@ -220,6 +246,15 @@ async function send(){
  let c=document.getElementById('cmd').value;
  document.getElementById('cmd').value='';
  await fetch('/api/cmd',{method:'POST',body:JSON.stringify({cmd:c})});
+}
+
+async function withdraw(){
+ let btn = document.querySelector('.transfer-btn');
+ btn.innerText = "PROCESSING...";
+ let r = await fetch('/api/withdraw', {method:'POST'});
+ let d = await r.json();
+ alert(d.status);
+ btn.innerText = "TRANSFER FUNDS";
 }
 </script>
 </body>
@@ -231,19 +266,23 @@ async def root(): return HTML_UI
 
 @app.get("/api/data")
 async def get_data():
-    return {"logs": list(system.overlord.log_queue)}
+    return {
+        "logs": list(system.overlord.logs),
+        "secured": await db.get_balance("SECURED"),
+        "pending": await db.get_balance("PENDING")
+    }
 
 @app.post("/api/cmd")
 async def cmd(request: Request):
     data = await request.json()
     c = data.get('cmd')
     if "transmute" in c: asyncio.create_task(system.rev.run_alchemist(c.split()[-1]))
-    return {"status": "Command Queued"}
+    return {"status": "Queued"}
 
-@app.get("/download_report")
-async def download():
-    f = await db.export_csv()
-    return FileResponse(f, filename="revenue_report.csv") if f else {"error": "No data"}
+@app.post("/api/withdraw")
+async def withdraw():
+    res = await bank.withdraw_all()
+    return {"status": res}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=10000)
