@@ -9,9 +9,6 @@ youtube_transcript_api
 jinja2
 psutil
 textblob
-googlesearch-python
+requests
 pandas
 dnspython
-requests
-numpy
-scikit-learn
