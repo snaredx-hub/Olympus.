@@ -24,8 +24,8 @@ class Config:
     DB_PATH = "olympus.db"
     
     # TELEGRAM (The Unblockable Notification Channel)
-    TG_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN" 
-    TG_CHAT_ID = "YOUR_CHAT_ID"          
+    TG_TOKEN = "8210200215:AAF6mJ5wJL54wXt7QRE1J2HdL6NGXbQlWuc" 
+    TG_CHAT_ID = "7485997161"          
 
 # --- [LAYER 0: INFRASTRUCTURE & MEMORY] ---
 class Database:
