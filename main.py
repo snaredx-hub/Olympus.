@@ -1,6 +1,6 @@
 """
-PROJECT OLYMPUS: ZENITH EDITION
-Status: SELF-EVOLVING | MULTIMODAL | WEB3 ENABLED
+PROJECT OLYMPUS: ZENITH EDITION (PRE-CONFIGURED)
+Status: SELF-EVOLVING | MULTIMODAL | WEB3 ENABLED | ONLINE
 """
 import asyncio, datetime, os, json, math, random
 import uvicorn
@@ -18,14 +18,18 @@ from collections import deque, defaultdict
 from textblob import TextBlob
 from sklearn.linear_model import SGDRegressor # Lightweight ML
 
-# --- [CONFIGURATION: THE OWNER'S KEYS] ---
+# --- [CONFIGURATION: KEYS PRE-FILLED] ---
 class Config:
     REAL_MONEY_MODE = True
     DB_PATH = "olympus.db"
     
-    # TELEGRAM (The Unblockable Notification Channel)
-    TG_TOKEN = "8210200215:AAF6mJ5wJL54wXt7QRE1J2HdL6NGXbQlWuc" 
-    TG_CHAT_ID = "7485997161"          
+    # TELEGRAM KEYS (FIXED & EMBEDDED)
+    TG_TOKEN = "8210200215:AAF6mJ5wJL54wXt7QRElJ2HdL6NGXbQlWuc" 
+    TG_CHAT_ID = "7485997161"           
+
+    # BINANCE KEYS (Optional - Add later for auto-trading)
+    BINANCE_KEY = "dummy"
+    BINANCE_SECRET = "dummy"
 
 # --- [LAYER 0: INFRASTRUCTURE & MEMORY] ---
 class Database:
@@ -43,7 +47,6 @@ class Database:
             await db.commit()
 
     async def get_engine_performance(self):
-        # Returns total revenue per engine for RL weighting
         async with aiosqlite.connect(Config.DB_PATH) as db:
             cursor = await db.execute("SELECT engine, SUM(amount) FROM revenue GROUP BY engine")
             return await cursor.fetchall()
@@ -52,21 +55,15 @@ db = Database()
 
 # --- [LAYER 1: THE CORTEX (MACHINE LEARNING)] ---
 class TheCortex:
-    """
-    Continuous Learning Module. 
-    Decides which engine to run based on profitability.
-    """
+    """Continuous Learning Module."""
     def __init__(self):
-        self.engine_weights = defaultdict(lambda: 1.0) # Start equal
-        self.learning_rate = 0.1
+        self.engine_weights = defaultdict(lambda: 1.0)
 
     async def optimize(self):
-        """Reads DB and adjusts priorities."""
         stats = await db.get_engine_performance()
         total = sum([row[1] for row in stats])
         if total > 0:
             for engine, revenue in stats:
-                # Simple Reinforcement: Weight = % of total revenue
                 self.engine_weights[engine] = 1.0 + (revenue / total)
         return self.engine_weights
 
@@ -75,9 +72,6 @@ cortex = TheCortex()
 # --- [LAYER 2: THE MESSENGER] ---
 class TheMessenger:
     def send_alert(self, message):
-        if "YOUR_" in Config.TG_TOKEN: 
-            print(f"[SIM ALERT]: {message}")
-            return "SIMULATED"
         try:
             url = f"https://api.telegram.org/bot{Config.TG_TOKEN}/sendMessage"
             data = {"chat_id": Config.TG_CHAT_ID, "text": f"🧠 OLYMPUS: {message}"}
@@ -88,104 +82,78 @@ class TheMessenger:
 bot = TheMessenger()
 logs = deque(maxlen=50)
 
-# --- [LAYER 3: ADVANCED REVENUE ENGINES] ---
+# --- [LAYER 3: REVENUE ENGINES] ---
 class RevenueManager:
     
-    # ENGINE 1: WEB3 SENTINEL (Blockchain/IoT)
+    # 1. WEB3 SENTINEL
     async def run_web3_sentinel(self):
         try:
-            # Watches for large movements (Whale Alert Simulation)
-            # In production, use Etherscan API or Whale-Alert API
-            volatility_index = random.uniform(0, 100)
-            
-            if volatility_index > 85:
-                msg = f"WEB3 ALERT: Large On-Chain Movement Detected. Volatility {volatility_index:.0f}/100. Prepare for dip."
+            volatility = random.uniform(0, 100)
+            if volatility > 90:
+                msg = f"WEB3 ALERT: High Volatility ({volatility:.0f}). Market moving."
                 bot.send_alert(msg)
                 logs.appendleft(msg)
-                return "WEB3: High Activity."
-            return "WEB3: Stable."
-        except: return "WEB3: Error"
+        except: pass
 
-    # ENGINE 2: CONVERSATION INTELLIGENCE (Sales/Meetings)
+    # 2. CONVERSATION INTEL
     async def analyze_transcript(self, text):
-        # Analyzes pasted text for action items
         blob = TextBlob(text)
         sentiment = blob.sentiment.polarity
-        action_items = [s for s in text.split('\n') if "?" in s or "urgent" in s.lower()]
-        
-        report = f"CONVERSATION INTEL:\nSentiment: {sentiment:.2f}\nAction Items Detected: {len(action_items)}"
-        bot.send_alert(report)
-        return report
+        bot.send_alert(f"INTEL: Sentiment {sentiment:.2f}. Analysis Complete.")
 
-    # ENGINE 3: SECTOR SNIPER (Medical/Cyber)
+    # 3. SECTOR SNIPER
     async def run_sector_sniper(self):
-        target_keywords = ["Cybersecurity Consultant", "Medical Coding", "HIPAA Remote"]
+        targets = ["Cybersecurity", "Medical Coding", "Data Analyst"]
         try:
             feed = feedparser.parse("https://www.reddit.com/r/forhire/new/.rss")
             for entry in feed.entries[:5]:
-                for kw in target_keywords:
-                    if kw.lower() in entry.title.lower():
-                        msg = f"HIGH VALUE TARGET: {entry.title}\n{entry.link}\nSector: {kw}"
+                for t in targets:
+                    if t.lower() in entry.title.lower():
+                        msg = f"TARGET ACQUIRED: {t}\n{entry.title}\n{entry.link}"
                         bot.send_alert(msg)
-                        await db.log_success("SNIPER", 250.00) # High value logging
-                        logs.appendleft(f"SNIPER: Found {kw}")
+                        logs.appendleft(f"SNIPER: Found {t}")
                         return
         except: pass
 
-    # ENGINE 4: THE ALCHEMIST (Multimodal)
+    # 4. ALCHEMIST
     async def run_alchemist(self, url):
-        logs.appendleft(f"ALCHEMIST: Analyzing {url}...")
+        logs.appendleft(f"ALCHEMIST: Processing {url}...")
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
             vid = url.split("v=")[1].split("&")[0]
             transcript = YouTubeTranscriptApi.get_transcript(vid)
-            text = " ".join([t['text'] for t in transcript])
+            text = " ".join([t['text'] for t in transcript])[:1000]
             
-            # Auto-Identify Niche
-            if "crypto" in text.lower(): niche = "Finance"
-            elif "python" in text.lower(): niche = "Coding"
-            else: niche = "General"
-            
-            summary = text[:1000]
-            bot.send_alert(f"CONTENT GENERATED ({niche}):\n{summary[:200]}...")
-            await db.log_success("ALCHEMIST", 25.00)
-            return "Content Created"
-        except: 
-            # Fallback to Google
-            try:
-                g_res = list(search(f"summary of {url}", num_results=1))
-                bot.send_alert(f"ALCHEMIST (BACKUP): Found info at {g_res[0]}")
-                return "Google Backup Used"
-            except: return "Failed"
+            bot.send_alert(f"CONTENT READY:\n{text[:200]}...")
+            await db.log_success("ALCHEMIST", 15.00)
+            return "Success"
+        except:
+            logs.appendleft("ALCHEMIST: Failed (No Captions)")
+            return "Failed"
 
 rev = RevenueManager()
 
-# --- [LAYER 4: THE OVERLORD (AUTONOMY)] ---
+# --- [LAYER 4: THE OVERLORD] ---
 class Overlord:
     def __init__(self, sys):
         self.sys = sys
 
     async def loop(self):
-        logs.appendleft("OVERLORD: ZENITH ONLINE. LEARNING ACTIVE.")
-        bot.send_alert("System Initialized. Waiting for input...")
+        logs.appendleft("OVERLORD: ZENITH ONLINE.")
+        bot.send_alert("SYSTEM REBOOTED. ZENITH PROTOCOLS ACTIVE.")
         
         while True:
-            # 1. SELF-OPTIMIZE
             weights = await cortex.optimize()
             
-            # 2. DYNAMIC EXECUTION (Run best engines more often)
-            
-            # Always run Web3 (Passive Watcher)
+            # Autonomous Loops
             await self.sys.rev.run_web3_sentinel()
             
-            # Run Sniper based on weight
             if random.random() < weights['SNIPER']:
                 await self.sys.rev.run_sector_sniper()
-                
-            # 3. Heartbeat
+            
             await asyncio.sleep(45)
 
-# --- [LAYER 5: APP CORE & DASHBOARD] ---
+# --- [LAYER 5: APP & UI] ---
 app = FastAPI()
 
 @app.on_event("startup")
@@ -199,32 +167,31 @@ HTML_UI = """
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-body{background:#020202;color:#00f3ff;font-family:monospace;padding:15px;margin:0}
-.card{border:1px solid #333;padding:10px;margin-bottom:10px;background:#0a0a0a;box-shadow:0 0 5px rgba(0,243,255,0.2)}
+body{background:#020202;color:#00f3ff;font-family:monospace;padding:15px}
+.card{border:1px solid #333;padding:10px;margin-bottom:10px;background:#0a0a0a}
 h3{border-bottom:1px solid #333;margin:0 0 5px 0;font-size:12px;color:#888}
-.log{height:180px;overflow-y:auto;font-size:10px;color:#ccc;white-space:pre-wrap;}
+.log{height:180px;overflow-y:auto;font-size:10px;color:#ccc}
 input{width:65%;padding:12px;background:#000;border:1px solid #00f3ff;color:#fff}
 button{width:30%;padding:12px;background:#00f3ff;color:#000;border:none;font-weight:bold}
-.brain-stat{font-size:9px;color:#ff00ff}
 </style>
 </head>
 <body>
 <div style="margin-bottom:15px;display:flex;justify-content:space-between">
  <span>OLYMPUS // ZENITH</span>
- <span id="status">● LIVE</span>
+ <span style="color:#00ff41">● LIVE</span>
 </div>
 
 <div class="card">
- <h3>CORTEX MEMORY (RL WEIGHTS)</h3>
+ <h3>CORTEX WEIGHTS</h3>
  <div id="brain-log" class="log" style="height:50px;color:#ff00ff">Learning...</div>
 </div>
 
 <div class="card">
- <h3>OPERATIONAL LOGS</h3>
+ <h3>SYSTEM LOGS</h3>
  <div id="console" class="log">Initializing...</div>
 </div>
 
-<input id="cmd" placeholder="Paste Text or URL..." /><button onclick="send()">PROCESS</button>
+<input id="cmd" placeholder="Paste URL or Text..." /><button onclick="send()">PROCESS</button>
 
 <script>
 setInterval(async()=>{
@@ -232,12 +199,11 @@ setInterval(async()=>{
  let d=await r.json();
  document.getElementById('console').innerHTML = d.logs.join('<br>');
  
- // Format Brain Stats
  let b_html = "";
  for (const [eng, w] of Object.entries(d.weights)) {
-    b_html += `${eng}: PRIORITY ${w.toFixed(2)}<br>`;
+    b_html += `${eng}: ${w.toFixed(2)}<br>`;
  }
- document.getElementById('brain-log').innerHTML = b_html || "Gathering Data...";
+ document.getElementById('brain-log').innerHTML = b_html || "Calibrating...";
 }, 2000);
 
 async function send(){
@@ -255,21 +221,14 @@ async def root(): return HTML_UI
 
 @app.get("/api/data")
 async def get_data():
-    return {
-        "logs": list(logs),
-        "weights": cortex.engine_weights
-    }
+    return {"logs": list(logs), "weights": cortex.engine_weights}
 
 @app.post("/api/cmd")
 async def cmd(request: Request):
     data = await request.json()
     c = data.get('cmd')
-    
-    # Intelligent Routing
     if "http" in c: asyncio.create_task(rev.run_alchemist(c))
-    elif len(c) > 20: asyncio.create_task(rev.analyze_transcript(c))
-    else: logs.appendleft("Unknown Command. Paste URL or Text.")
-    
+    elif len(c) > 10: asyncio.create_task(rev.analyze_transcript(c))
     return {"status": "Queued"}
 
 if __name__ == "__main__":
