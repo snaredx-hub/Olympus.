@@ -12,3 +12,6 @@ textblob
 googlesearch-python
 pandas
 dnspython
+requests
+numpy
+scikit-learn
